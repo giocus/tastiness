@@ -174,9 +174,6 @@ if env['PLATFORM'] != 'win32' and env['PLATFORM'] != 'cygwin' and env['CREATE_AV
 else:
   env['CREATE_AVI']=0;
 
-Export('env')
-fceux = SConscript(FCEUX_DIR+'/src/SConscript')
-env.Program(target=FCEUX_DIR+"/fceux-net-server", source=[FCEUX_DIR+"/fceux-server/server.cpp", FCEUX_DIR+"/fceux-server/md5.cpp", FCEUX_DIR+"/fceux-server/throttle.cpp"])
 # Install rules
 if prefix == None:
   prefix = "/usr/local"
@@ -185,7 +182,25 @@ exe_suffix = ''
 if env['PLATFORM'] == 'win32':
   exe_suffix = '.exe'
 
-fceux_src = FCEUX_DIR+'/src/fceux' + exe_suffix
+Export('env')
+
+def flatten(files):
+    result = []
+    for f in files:
+        if isinstance(f, str):
+            result.append(f)
+        else:
+            result.extend(f)
+    return result
+
+fceux_file_list = SConscript(FCEUX_DIR+'/src/SConscript')
+fceux_file_list = flatten(fceux_file_list)
+fceux_file_list = [FCEUX_DIR+'/src/'+f for f in fceux_file_list]
+fceux = env.Program(FCEUX_DIR+'/fceux'+exe_suffix, fceux_file_list)
+
+env.Program(target=FCEUX_DIR+"/fceux-net-server", source=[FCEUX_DIR+"/fceux-server/server.cpp", FCEUX_DIR+"/fceux-server/md5.cpp", FCEUX_DIR+"/fceux-server/throttle.cpp"])
+
+fceux_src = FCEUX_DIR+'/fceux' + exe_suffix
 fceux_dst = 'bin/fceux' + exe_suffix
 
 fceux_net_server_src = FCEUX_DIR+'/fceux-net-server' + exe_suffix

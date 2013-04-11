@@ -1,7 +1,6 @@
 *.o
 bin
 config.log
-fceux/src/fceux
+fceux/fceux
 fceux/fceux-net-server
 .scon*
-
