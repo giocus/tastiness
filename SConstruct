@@ -235,4 +235,23 @@ env.Alias('install', env.Command(man_dst, man_src, [Copy(man_dst, man_src)]))
 env.Alias('install', env.Command(man_net_dst, man_net_src, [Copy(man_net_dst, man_net_src)]))
 env.Alias('install', (prefix + "/bin/"))
 
+env.Append(CPPPATH=['cityhash-1.1.0/src'])
+cityEnv = env.Clone()
+cityEnv.Append(CPPPATH=['cityhash-1.1.0'])
 
+cityhash = cityEnv.Object('cityhash-1.1.0/src/city.cc')
+
+tastiness_files = ['tastiness-main.cc', 'emulator.cc', 'headless-driver.cc']
+tastiness_files += [cityhash]
+tastiness_files += fceux_file_list
+tastiness_files.remove('fceux/src/drivers/sdl/sdl.cpp')
+tastiness_files.remove('fceux/src/drivers/sdl/input.cpp')
+tastiness_files.remove('fceux/src/drivers/sdl/config.cpp')
+tastiness_files.remove('fceux/src/drivers/sdl/sdl-joystick.cpp')
+tastiness_files.remove('fceux/src/drivers/sdl/sdl-sound.cpp')
+tastiness_files.remove('fceux/src/drivers/sdl/sdl-throttle.cpp')
+tastiness_files.remove('fceux/src/drivers/sdl/sdl-video.cpp')
+tastiness_files.remove('fceux/src/drivers/sdl/unix-netplay.cpp')
+tastiness_files.remove('fceux/src/drivers/sdl/sdl-opengl.cpp')
+
+env.Program(target='bin/tastiness', source=tastiness_files)
