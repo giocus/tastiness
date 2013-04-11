@@ -8,7 +8,7 @@
 # Use "scons" to compile and "scons install" to install.
 #
 
-FCEUX_DIR = 'fceux-2.2.1'
+FCEUX_DIR = 'fceux'
 
 import os
 import sys
