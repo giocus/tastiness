@@ -1,0 +1,7 @@
+*.o
+bin
+config.log
+fceux-2.2.1/src/fceux
+fceux-2.2.1/fceux-net-server
+.scon*
+
