@@ -32,8 +32,12 @@
 
 #include "city.h"
 
-
-
 #include "emulator.h"
 #include "debug.h"
+
+inline uint64_t microTime() {
+    timeval tv;
+    gettimeofday(&tv, NULL);
+    return uint64_t(tv.tv_sec)*1000000 + uint64_t(tv.tv_usec);
+}
 

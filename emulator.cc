@@ -324,6 +324,7 @@ bool Emulator::Initialize(const string &romfile) {
 // Bits from MSB to LSB are
 //    RLDUTSBA (Right, Left, Down, Up, sTart, Select, B, A)
 void Emulator::Step(uint8 inputs) {
+  uint8* gfx;
   int32 *sound;
   int32 ssize;
 
@@ -335,7 +336,7 @@ void Emulator::Step(uint8 inputs) {
   const int SKIP_VIDEO_AND_SOUND = 2;
 
   // Emulate a single frame.
-  FCEUI_Emulate(NULL, &sound, &ssize, SKIP_VIDEO_AND_SOUND);
+  FCEUI_Emulate(&gfx, &sound, &ssize, SKIP_VIDEO_AND_SOUND);
 }
 
 void Emulator::Save(vector<uint8> *out) {

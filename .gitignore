@@ -4,3 +4,4 @@ config.log
 fceux/fceux
 fceux/fceux-net-server
 .scon*
+*.pbxproj

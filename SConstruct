@@ -36,8 +36,9 @@ prefix = GetOption('prefix')
 env = Environment(options = opts)
 
 #### Uncomment this for a public release ###
-env.Append(CPPDEFINES=["PUBLIC_RELEASE"])
-env['DEBUG'] = 0
+#env.Append(CPPDEFINES=["PUBLIC_RELEASE"])
+env['DEBUG'] = 1
+env['LUA'] = 0
 ############################################
 
 # LSB_FIRST must be off for PPC to compile
@@ -241,7 +242,10 @@ cityEnv.Append(CPPPATH=['cityhash-1.1.0'])
 
 cityhash = cityEnv.Object('cityhash-1.1.0/src/city.cc')
 
+mongoose = env.Object(target='mongoose', source='mongoose.git/mongoose.c')
+
 tastiness_files = ['tastiness-main.cc', 'emulator.cc', 'headless-driver.cc']
+tastiness_files += [mongoose]
 tastiness_files += [cityhash]
 tastiness_files += fceux_file_list
 tastiness_files.remove('fceux/src/drivers/sdl/sdl.cpp')
@@ -254,4 +258,5 @@ tastiness_files.remove('fceux/src/drivers/sdl/sdl-video.cpp')
 tastiness_files.remove('fceux/src/drivers/sdl/unix-netplay.cpp')
 tastiness_files.remove('fceux/src/drivers/sdl/sdl-opengl.cpp')
 
+env.Append(CPPDEFINES=["USE_WEBSOCKET"])
 env.Program(target='bin/tastiness', source=tastiness_files)
