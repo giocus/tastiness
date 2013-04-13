@@ -1,11 +1,38 @@
+<!doctype html>
 <html>
   <head>
     <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
+    <script src="http://underscorejs.org/underscore-min.js"></script>
+    <link rel="stylesheet" type="text/css" href="main.css">
   </head>
   <body>
-    <input type='file' />
+    ROM: <input type='file' id='romFile' />
+    FM2: <input type='file' id='fm2File' />
     <br/>
-    <img id='screen' />
+    <div id='hud'>
+      <canvas id='screenCanvas' width='256' height='224'>asdf</canvas>
+      <div id='ram'></div>
+    </div>
+    <div id='timelineControls'>
+      <div id='timebar'>
+        <div id='timepos'></div>
+      </div>
+      <input type='button' id='frame-60' value='-60' />
+      <input type='button' id='frame-10' value='-10' />
+      <input type='button' id='frame-1' value='-1' />
+      <input type='text' id='frameN', value='0' />
+      <input type='button' id='frame+1' value='+1' />
+      <input type='button' id='frame+10' value='+10' />
+      <input type='button' id='frame+60' value='+60' />
+      <input type='text' id='frameCount', value='10000' />
+    </div>
+    <div id='inputControls'>
+      <!--<div id='inputHeader'>RLDUTSBA</div>-->
+      <div id='inputScroller'>
+        <div id='frameNumbers'></div>
+        <div id='frameInputs'></div>
+      </div>
+    </div>
   </body>
   <script src='main.js'></script>
 </html>

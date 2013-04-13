@@ -1,0 +1,95 @@
+* {
+  -webkit-user-select: none;
+  user-select: none;
+}
+input[type=text] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+#hud {
+  position:relative;
+  height:448px;
+}
+
+#screenCanvas {
+  width:512px;
+  height:448px;
+  position:absolute;
+  top:0;
+  left:0;
+}
+
+#ram {
+  position:absolute;
+  top:0;
+  left:520px;
+  height:448px;
+  white-space:pre;
+  font-family:Inconsolata;
+  font-size:13px;
+  font-weight:bold;
+}
+.ramLabel {
+  color:#aaa;
+}
+#ram .changed {
+  color:red;
+}
+#timebar {
+  height:20px;
+  background:#ddd;
+  margin-top:5px;
+  position:relative;
+}
+#timepos {
+  height:20px;
+  width:1px;
+  background:black;
+  position:absolute;
+  top:0;
+}
+#timelineControls {
+  width:512px;
+}
+#frameN {
+  width:6em;
+}
+#frameCount {
+  width:6em;
+  float:right;
+}
+#inputControls {
+  margin-top:6em;
+  font-family:Inconsolata;
+  font-size:13px;
+  background:#ccffcc;
+}
+#frameNumbers, #frameInputs {
+  white-space:pre;
+}
+#frameNumbers {
+  cursor:pointer;
+  display:inline-block;
+  -webkit-transform: rotate(-90deg);
+  -webkit-transform-origin: 0 0 0;
+  position:absolute;
+  color:#aaa;
+  line-height:11px;
+}
+#frameNumbers div:hover {
+  text-decoration:underline;
+}
+#frameInputs > div {
+  float:left;
+  width:11px;
+  word-break:break-all;
+  line-height:11px;
+}
+#frameInputs > div * {
+  position:relative;
+  left:3px;
+}
+#inputScroller .focus {
+  background:#bbeebb;
+}

@@ -37,7 +37,7 @@ struct StateCache {
   }
 
   void Resize(uint64 ll, uint64 ss) {
-    printf("Resize cache %d %d\n", ll, ss);
+    printf("Resize cache %lld %lld\n", ll, ss);
     // Recover memory.
     for (Hash::iterator it = hashtable.begin(); 
 	 it != hashtable.end(); /* in loop */) {
@@ -130,8 +130,8 @@ struct StateCache {
   }
 
   void PrintStats() {
-    printf("Current cache size: %ld / %ld. next_seq %ld\n"
-	   "%ld hits and %ld misses\n", 
+    printf("Current cache size: %lld / %lld. next_seq %lld\n"
+	   "%lld hits and %lld misses\n", 
 	   count, limit, next_sequence,
 	   hits, misses);
   }
@@ -175,6 +175,7 @@ static int DriverInitialize(FCEUGI *gi) {
 
   // Here we initialized sound. Assuming it's safe to skip,
   // because of an early return if config turned it off.
+  //FCEUI_Sound(44100);
 
   // Used to init joysticks. Don't care about that.
 
@@ -228,6 +229,7 @@ int LoadGame(const char *path) {
 
 void Emulator::Shutdown() {
   CloseGame();
+  initialized = false;
 }
 
 bool Emulator::Initialize(const string &romfile) {
@@ -323,20 +325,13 @@ bool Emulator::Initialize(const string &romfile) {
 // Make one emulator step with the given input.
 // Bits from MSB to LSB are
 //    RLDUTSBA (Right, Left, Down, Up, sTart, Select, B, A)
-void Emulator::Step(uint8 inputs) {
-  uint8* gfx;
-  int32 *sound;
-  int32 ssize;
-
+void Emulator::Step(uint8 inputs, uint8** pXBuf, int32** soundBuf, int32* soundBufSize, int skip) {
   // The least significant byte is player 0 and
   // the bits are in the same order as in the fm2 file.
   joydata = (uint32) inputs;
 
-  // Limited ability to skip video and sound.
-  const int SKIP_VIDEO_AND_SOUND = 2;
-
   // Emulate a single frame.
-  FCEUI_Emulate(&gfx, &sound, &ssize, SKIP_VIDEO_AND_SOUND);
+  FCEUI_Emulate(pXBuf, soundBuf, soundBufSize, skip);
 }
 
 void Emulator::Save(vector<uint8> *out) {
@@ -481,7 +476,7 @@ void Emulator::CachingStep(uint8 input) {
   if (vector<uint8> *cached = cache->GetKnownResult(input, start)) {
     LoadUncompressed(cached);
   } else {
-    Step(input);
+    //Step(input);
     vector<uint8> result;
     SaveUncompressed(&result);
     cache->Remember(input, start, result);

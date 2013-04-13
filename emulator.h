@@ -29,7 +29,7 @@ struct Emulator {
   // Make one emulator step with the given input.
   // Bits from MSB to LSB are
   //    RLDUTSBA (Right, Left, Down, Up, sTart, Select, B, A)
-  static void Step(uint8 inputs);
+  static void Step(uint8 inputs, uint8** pXBuf, int32** soundBuf, int32* soundBufSize, int skip);
 
   // Copy the 0x800 bytes of RAM.
   static void GetMemory(vector<uint8> *mem);
@@ -37,6 +37,8 @@ struct Emulator {
   // Returns 64-bit checksum (based on MD5, endianness-dependent)
   // of RAM (only). Note there are other important bits of state.
   static uint64 RamChecksum();
+
+  static void GetPalette(vector<uint32>& entries);
 
   // Fancy stuff.
 

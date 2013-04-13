@@ -136,10 +136,22 @@ void FCEUD_NetworkClose(void) {}
 void FCEUD_NetplayText(uint8 *text) {}
 
 
-void FCEUD_SetPalette(uint8 index, uint8 r, uint8 g, uint8 b) {}
+uint32 gPalette[256];
+
+void FCEUD_SetPalette(uint8 index, uint8 r, uint8 g, uint8 b) {
+  uint8 a = 0xff;
+  gPalette[index] = (a<<24) | (b<<16) | (g<<8) | r;
+}
+
+void Emulator::GetPalette(vector<uint32>& entries) {
+  entries.resize(256);
+  memcpy(&entries[0], gPalette, sizeof(gPalette));
+}
 
 // Gets the color for a particular index in the palette.
-void FCEUD_GetPalette(uint8 index, uint8 *r, uint8 *g, uint8 *b) {}
+void FCEUD_GetPalette(uint8 index, uint8 *r, uint8 *g, uint8 *b) {
+  printf("FCEUD_GetPalette\n");
+}
 
 bool FCEUI_AviEnableHUDrecording() { return false; }
 void FCEUI_SetAviEnableHUDrecording(bool enable) {}

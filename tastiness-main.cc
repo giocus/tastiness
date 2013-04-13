@@ -1,6 +1,12 @@
 #include "tastiness.h"
 #include "mongoose.git/mongoose.h"
 
+//timeline...
+//gEmuStates[0] + gJoyStates[1] -> gEmuStates[1]
+vector<uint8> gEmuInitialState;
+vector<vector<uint8> > gEmuStates;
+vector<uint8> gJoyStates;
+
 struct mg_connection* gConn;
 
 static void websocket_ready_handler(struct mg_connection *conn) {
@@ -8,10 +14,13 @@ static void websocket_ready_handler(struct mg_connection *conn) {
   printf("websocket client connected\n");
 }
 
-void cmd_openRom(char* data, int data_len);
+void doStep(int frame);
 
-static int websocket_data_handler(struct mg_connection *conn, int flags,
-                                  char *data, size_t data_len) {
+void cmd_openRom(mg_connection* conn, char* data, int data_len);
+void cmd_getFrame(mg_connection* conn, char* data, int data_len);
+void cmd_setFrameInputs(mg_connection* conn, char* data, int data_len);
+
+static int websocket_data_handler(mg_connection *conn, int flags, char *data, size_t data_len) {
   char* colon = strnstr(data, ":", 16);
   if(colon == 0) {
       printf("ERROR: received invalid websocket frame (no command) - terminating connection\n");
@@ -21,28 +30,24 @@ static int websocket_data_handler(struct mg_connection *conn, int flags,
   memcpy(commandName, data, colon-data);
   commandName[colon-data] = 0;
 
-  printf("commandName: %s\n", commandName);
   char* commandData = colon+1;
   int commandDataLen = data_len - (commandData - data);
 
+  printf("commandName: %s commandDataLen: %d\n", commandName, commandDataLen);
+
+  uint64_t st = microTime();
   if(0);
-  else if(!strcmp(commandName, "openRom")) cmd_openRom(commandData, commandDataLen);
+#define CMD(n) else if(!strcmp(commandName, #n)) cmd_ ## n (conn, commandData, commandDataLen);
+  CMD(openRom)
+  CMD(getFrame)
+  CMD(setFrameInputs)
+#undef CMD
   else {
       printf("ERROR: unhandled websocket command '%s' - terminating connection\n", commandName);
       return 0;
   }
-
-  // // Prepare frame
-  // reply[0] = 0x82;  // binary
-  // reply[1] = data_len;
-
-  // // Copy message from request to reply, applying the mask if required.
-  // for (i = 0; i < data_len; i++) {
-  //   reply[i + 2] = data[i];
-  // }
-
-  // // Echo the message back to the client
-  // mg_write(conn, reply, 2 + data_len);
+  uint64_t et = microTime();
+  printf("command took %.3fms\n", double(et-st)/1000);
 
   return 1;
 }
@@ -60,13 +65,12 @@ int main(int argc, char** argv) {
   callbacks.websocket_data = websocket_data_handler;
   printf("Waiting for websocket connection on port 9999\n");
   ctx = mg_start(&callbacks, NULL, options);
-  getchar();
   sleep(86400*365); //1 year
 
   return 0;
 }
 
-void cmd_openRom(char* data, int data_len) {
+void cmd_openRom(mg_connection* conn, char* data, int data_len) {
   static bool initialized = false;
   if(initialized) Emulator::Shutdown();
   initialized = true;
@@ -77,7 +81,142 @@ void cmd_openRom(char* data, int data_len) {
   fwrite(data, 1, data_len, fp);
   fclose(fp);
   Emulator::Initialize(romFilename);
-  vector<uint8> save;
-  Emulator::SaveUncompressed(&save);
-  printf("Save states are %ld bytes.\n", save.size());
+
+  Emulator::SaveUncompressed(&gEmuInitialState);
+  printf("Save states are %ld bytes.\n", gEmuInitialState.size());
+
+  gEmuStates.clear();
 }
+
+struct BITMAPINFOHEADER {
+  uint32 biSize;
+  uint32 biWidth;
+  uint32 biHeight;
+  uint16 biPlanes;
+  uint16 biBitCount;
+  uint32 biCompression;
+  uint32 biSizeImage;
+  uint32 biXPelsPerMeter;
+  uint32 biYPelsPerMeter;
+  uint32 biClrUsed;
+  uint32 biClrImportant;
+};
+
+void send_bin(mg_connection* conn, char* msgt, unsigned char* data, int data_len) {
+  char typebuf[128];
+  typebuf[0] = 0x81; //FIN, text
+  typebuf[1] = strlen(msgt);
+  strcpy(typebuf+2, msgt);
+  mg_write(conn, typebuf, strlen(msgt)+2);
+
+  int bufsize = 10 + data_len;
+  char* buf = (char*)malloc(bufsize);
+  char* c = buf;
+  *c++ = 0x82; //FIN, binary
+  if(data_len >=65536) {
+    *c++ = 0x7f; //size coming, 8 bytes
+    ((uint32*)c)[0] = 0;
+    c+=4;
+    ((uint32*)c)[0] = htonl(data_len);
+    c+=4;
+  } else {
+    *c++ = 0x7e; //size coming, 2 bytes
+    ((uint16*)c)[0] = htons(data_len);
+    c+=2;
+  }
+
+  memcpy(c, data, data_len);
+  mg_write(conn, buf, c-buf+data_len);
+}
+void send_txt(mg_connection* conn, char* msg) {
+  char buf[4096];
+  int len = (int)strlen(msg);
+
+  char* c = buf;
+  *c++ = 0x81;
+  if(len<126) {
+    *c++ = len;
+  } else {
+    *c++ = 0x7e;
+    ((uint16*)c)[0] = htons(len);
+    c+=2;
+  }
+
+  strcpy(c, msg);
+  mg_write(conn, buf, c-buf+len);
+}
+
+
+const int WIDTH = 256;
+const int HEIGHT = 224;
+
+uint8 getJoyStateForFrame(int frame) {
+  if(frame>=0 && frame < gJoyStates.size()) {
+    return gJoyStates[frame];
+  } else  {
+    return 0;
+  }
+}
+
+void cmd_setFrameInputs(mg_connection* conn, char* data, int data_len) {
+  int invalidateFromIndex = gEmuStates.size();
+  for(int i=0; i<data_len; i++) {
+    uint8 input = ((uint8*)data)[i];
+    if(i>=gJoyStates.size() || gJoyStates[i] != input) {
+      invalidateFromIndex = i;
+      break;
+    }
+  }
+  gJoyStates.resize(data_len);
+  memcpy(&gJoyStates[0], data, data_len);
+  printf("invalidating from index %d\n", invalidateFromIndex);
+  gEmuStates.resize(invalidateFromIndex);
+}
+
+void cmd_getFrame(mg_connection* conn, char* data, int data_len) {
+  if(gEmuInitialState.empty()) {
+    return;
+  }
+
+  char buf[32];
+  strncpy(buf, data, data_len);
+  buf[data_len]=0;
+  int frame = atoi(buf);
+
+  uint8* gfx = 0;
+  int32 *sound = 0;
+  int32 ssize = 0;
+
+  //step with frameskip as needed
+  if(gEmuStates.size() <= frame) {
+    if(gEmuStates.empty()) {
+      Emulator::LoadUncompressed(&gEmuInitialState);
+    } else {
+      Emulator::LoadUncompressed(&gEmuStates[gEmuStates.size()-1]);
+    }
+    for(int f=gEmuStates.size(); f<frame; f++) {
+      Emulator::Step(getJoyStateForFrame(f), &gfx, &sound, &ssize, 2);
+      gEmuStates.resize(f+1);
+      Emulator::SaveUncompressed(&gEmuStates[f]);
+    }
+  }
+
+  vector<uint8>& preState = (frame==0) ? gEmuInitialState : gEmuStates[frame-1];
+  Emulator::LoadUncompressed(&preState);
+  Emulator::Step(getJoyStateForFrame(frame), &gfx, &sound, &ssize, 0);
+
+  static vector<uint32> palette;
+  Emulator::GetPalette(palette);
+
+  send_bin(gConn, "binFrameRam", RAM, 0x800);
+
+  static uint32 raw[WIDTH*HEIGHT];
+  for(int y=0; y<HEIGHT; y++) {
+    for(int x=0; x<WIDTH; x++) {
+      raw[y*WIDTH+x] = palette[gfx[y*WIDTH+x]];
+    }
+  }
+  send_bin(gConn, "binFrameGfx", (uint8*)raw, WIDTH*HEIGHT*4);
+  printf("got frame %d, ram hash: %llx\n", frame, CityHash64((const char*)RAM, 0x800));
+}
+
