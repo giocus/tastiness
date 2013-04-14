@@ -56,19 +56,25 @@ void websocket_ready_handler(struct mg_connection *conn) {
 }
 
 int main(int argc, char** argv) {
+  const char* port = "9999";
+  if(argc > 1 && atoi(argv[1])) {
+    port = argv[1];
+  }
   struct mg_context *ctx;
   struct mg_callbacks callbacks;
   const char *options[] = {
-    "listening_ports", "9999",
+    "listening_ports", port,
+    "document_root", "html_ui",
     NULL
   };
 
   memset(&callbacks, 0, sizeof(callbacks));
   callbacks.websocket_ready = websocket_ready_handler;
   callbacks.websocket_data = websocket_data_handler;
-  printf("Waiting for websocket connection on port 9999\n");
+  printf("\n\nTAStiNESs waiting for connection: http://localhost:%s/\n\n", port);
   ctx = mg_start(&callbacks, NULL, options);
-  sleep(86400*365); //1 year
+
+  while(true) { sleep(60); }
 
   return 0;
 }
