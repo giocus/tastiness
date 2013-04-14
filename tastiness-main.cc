@@ -164,8 +164,11 @@ void cmd_setFrameInputs(mg_connection* conn, char* data, int data_len) {
   }
   gJoyStates.resize(data_len);
   memcpy(&gJoyStates[0], data, data_len);
-  printf("invalidating from index %d\n", invalidateFromIndex);
-  gEmuStates.resize(invalidateFromIndex);
+  if(gEmuStates.size() > invalidateFromIndex) {
+    printf("invalidating from index %d\n", invalidateFromIndex);
+    gEmuStates.resize(invalidateFromIndex);
+  }
+  printf("gEmuStates.size(): %d\n", gEmuStates.size());
 }
 
 void cmd_getFrame(mg_connection* conn, char* data, int data_len) {
@@ -182,6 +185,7 @@ void cmd_getFrame(mg_connection* conn, char* data, int data_len) {
   int32 *sound = 0;
   int32 ssize = 0;
 
+  //printf("getFrame() frame: %d gEmuStates.size(): %d\n", frame, gEmuStates.size());
   //step with frameskip as needed
   if(gEmuStates.size() <= frame) {
     if(gEmuStates.empty()) {
@@ -193,18 +197,19 @@ void cmd_getFrame(mg_connection* conn, char* data, int data_len) {
       Emulator::Step(getJoyStateForFrame(f), &gfx, &sound, &ssize, 2);
       gEmuStates.resize(f+1);
       Emulator::SaveUncompressed(&gEmuStates[f]);
+      //printf("frameskip stepped into frame %d, input %02x, ram hash %016llx\n", f, getJoyStateForFrame(f), CityHash64((const char*)RAM, 0x800));
     }
   }
 
   vector<uint8>& preState = (frame==0) ? gEmuInitialState : gEmuStates[frame-1];
   Emulator::LoadUncompressed(&preState);
   Emulator::Step(getJoyStateForFrame(frame), &gfx, &sound, &ssize, 0);
-
-  static vector<uint32> palette;
-  Emulator::GetPalette(palette);
+  //printf("real stepped into frame %d, input %02x, ram hash %016llx\n", frame, getJoyStateForFrame(frame), CityHash64((const char*)RAM, 0x800));
 
   send_bin(gConn, "binFrameRam", RAM, 0x800);
 
+  static vector<uint32> palette;
+  Emulator::GetPalette(palette);
   static uint32 raw[WIDTH*HEIGHT];
   for(int y=0; y<HEIGHT; y++) {
     for(int x=0; x<WIDTH; x++) {
@@ -212,6 +217,5 @@ void cmd_getFrame(mg_connection* conn, char* data, int data_len) {
     }
   }
   send_bin(gConn, "binFrameGfx", (uint8*)raw, WIDTH*HEIGHT*4);
-  printf("got frame %d, ram hash: %llx\n", frame, CityHash64((const char*)RAM, 0x800));
 }
 

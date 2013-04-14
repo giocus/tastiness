@@ -46,6 +46,22 @@ FrameScrollerFocus = 5
 InputLetters = "RLDUTSBA"
 InputLetterBits = "ABSTUDLR" #InputLetters in bit order
 
+copyTypedArray = (arr, con, len) ->
+  newArray = new con(len)
+  copyLen = Math.min(arr.length, len)
+  for i in [0...copyLen]
+    newArray[i] = arr[i]
+  return newArray
+
+setFrameInput = (frame, input) ->
+  if frame >= FrameInputBytes.length
+    FrameInputBytes = copyTypedArray FrameInputBytes, Uint8Array, frame+100
+  if frame >= FrameCount
+    FrameCount = frame+1
+  FrameInputBytes[frame] = input|0
+  FrameInputBytesChanged = true
+  frameChanged()
+
 KeyStateSpans = {}
 _.each InputLetters, (k) ->
   span = $("<span>#{k}</span>").appendTo('#keyState')
@@ -199,13 +215,9 @@ for i in [0...FrameScrollerCount]
       _.each WritingInput, (v,k) ->
         bit = InputLetterBits.indexOf k
         if v == WRITE
-          FrameInputBytes[n] |= (1<<bit)
-          FrameInputBytesChanged = true
-          frameChanged()
+          setFrameInput n, (FrameInputBytes[n]|0) | (1<<bit)
         else if v == ERASE
-          FrameInputBytes[n] &= ~(1<<bit)
-          FrameInputBytesChanged = true
-          frameChanged()
+          setFrameInput n, (FrameInputBytes[n]|0) & ~(1<<bit)
 
     if i == FrameScrollerFocus
       $(frameNumDiv).addClass 'focus'
@@ -250,11 +262,7 @@ frameCountChanged = (v) ->
     v = parseInt(frameCountInput.value)
   FrameCount = v|0
   FrameCount = 1 if FrameCount<1
-  oldArray = FrameInputBytes
-  FrameInputBytes = new Uint8Array(FrameCount)
-  for i in [0...FrameCount]
-    if (i<FrameInputBytes.length) && (i<oldArray.length)
-      FrameInputBytes[i] = oldArray[i]
+  FrameInputBytes = copyTypedArray FrameInputBytes, Uint8Array, FrameCount
   frameCountInput.value = ''+FrameCount
   frameChanged()
 $(frameCountInput).on 'change', frameCountChanged
