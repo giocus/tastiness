@@ -9,18 +9,15 @@ vector<uint8> gJoyStates;
 
 struct mg_connection* gConn;
 
-static void websocket_ready_handler(struct mg_connection *conn) {
-  gConn = conn;
-  printf("websocket client connected\n");
-}
-
+void websocket_ready_handler(struct mg_connection *conn);
 void doStep(int frame);
+void send_bin(mg_connection* conn, char* msgt, unsigned char* data, int data_len);
 
 void cmd_openRom(mg_connection* conn, char* data, int data_len);
 void cmd_getFrame(mg_connection* conn, char* data, int data_len);
 void cmd_setFrameInputs(mg_connection* conn, char* data, int data_len);
 
-static int websocket_data_handler(mg_connection *conn, int flags, char *data, size_t data_len) {
+int websocket_data_handler(mg_connection *conn, int flags, char *data, size_t data_len) {
   char* colon = strnstr(data, ":", 16);
   if(colon == 0) {
       printf("ERROR: received invalid websocket frame (no command) - terminating connection\n");
@@ -50,6 +47,12 @@ static int websocket_data_handler(mg_connection *conn, int flags, char *data, si
   printf("command took %.3fms\n", double(et-st)/1000);
 
   return 1;
+}
+
+void websocket_ready_handler(struct mg_connection *conn) {
+  gConn = conn;
+  printf("websocket client connected\n");
+  send_bin(conn, "binInputs", &gJoyStates[0], gJoyStates.size());
 }
 
 int main(int argc, char** argv) {
@@ -102,48 +105,40 @@ struct BITMAPINFOHEADER {
   uint32 biClrImportant;
 };
 
-void send_bin(mg_connection* conn, char* msgt, unsigned char* data, int data_len) {
-  char typebuf[128];
-  typebuf[0] = 0x81; //FIN, text
-  typebuf[1] = strlen(msgt);
-  strcpy(typebuf+2, msgt);
-  mg_write(conn, typebuf, strlen(msgt)+2);
-
-  int bufsize = 10 + data_len;
-  char* buf = (char*)malloc(bufsize);
-  char* c = buf;
-  *c++ = 0x82; //FIN, binary
-  if(data_len >=65536) {
+void send_header(mg_connection* conn, bool binary, int data_len) {
+  char header[64];
+  char* c = header;
+  if(binary) {
+    *c++ = 0x82;
+  } else {
+    *c++ = 0x81;
+  }
+  if(data_len >= 65536) {
     *c++ = 0x7f; //size coming, 8 bytes
     ((uint32*)c)[0] = 0;
     c+=4;
     ((uint32*)c)[0] = htonl(data_len);
     c+=4;
-  } else {
+  } else if(data_len >= 126) {
     *c++ = 0x7e; //size coming, 2 bytes
     ((uint16*)c)[0] = htons(data_len);
     c+=2;
-  }
-
-  memcpy(c, data, data_len);
-  mg_write(conn, buf, c-buf+data_len);
-}
-void send_txt(mg_connection* conn, char* msg) {
-  char buf[4096];
-  int len = (int)strlen(msg);
-
-  char* c = buf;
-  *c++ = 0x81;
-  if(len<126) {
-    *c++ = len;
   } else {
-    *c++ = 0x7e;
-    ((uint16*)c)[0] = htons(len);
-    c+=2;
+    *c++ = data_len;
   }
+  mg_write(conn, header, c-header);
+}
 
-  strcpy(c, msg);
-  mg_write(conn, buf, c-buf+len);
+void send_txt(mg_connection* conn, char* msg) {
+  int len = (int)strlen(msg);
+  send_header(conn, false, len);
+  mg_write(conn, msg, len);
+}
+
+void send_bin(mg_connection* conn, char* msgt, unsigned char* data, int data_len) {
+  send_txt(conn, msgt);
+  send_header(conn, true, data_len);
+  mg_write(conn, data, data_len);
 }
 
 

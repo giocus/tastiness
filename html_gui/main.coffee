@@ -34,7 +34,7 @@ ScreenContext = ScreenCanvas.getContext '2d'
 ScreenContext.wekbitImageSmoothingEnabled = false
 ScreenImageData = ScreenContext.createImageData(256,224)
 CurFrame = 0
-FrameCount = 10000
+FrameCount = 0
 FrameInputBytes = new Uint8Array(FrameCount)
 FrameInputBytesChanged = false
 
@@ -42,6 +42,43 @@ FrameScrollerCount = 47
 FrameScrollerNumbers = []
 FrameScrollerInputBits = []
 FrameScrollerFocus = 5
+
+InputLetters = "RLDUTSBA"
+InputLetterBits = "ABSTUDLR" #InputLetters in bit order
+
+KeyStateSpans = {}
+_.each InputLetters, (k) ->
+  span = $("<span>#{k}</span>").appendTo('#keyState')
+  KeyStateSpans[k] = span
+
+KeyIsDown = {}
+$(document).on 'keydown', (e) ->
+  KeyIsDown[e.keyCode] = true
+  updateInputStates()
+$(document).on 'keyup', (e) ->
+  KeyIsDown[e.keyCode] = false
+  updateInputStates()
+
+ERASE=1
+WRITE=2
+WritingInput = {}
+KeyCodes = { R: 82, L: 76, D: 68, U: 85, T: 84, S: 83, B: 66, A: 65, LSHIFT: 16, RSHIFT: 13 }
+updateInputStates = () ->
+  erasing = KeyIsDown[KeyCodes.LSHIFT] || KeyIsDown[KeyCodes.RSHIFT]
+  _.each InputLetters, (k) ->
+    if KeyIsDown[KeyCodes[k]]
+      if erasing
+        KeyStateSpans[k].removeClass 'writing'
+        KeyStateSpans[k].addClass 'erasing'
+        WritingInput[k] = ERASE
+      else
+        KeyStateSpans[k].addClass 'writing'
+        KeyStateSpans[k].removeClass 'erasing'
+        WritingInput[k] = WRITE
+    else
+      KeyStateSpans[k].removeClass 'writing'
+      KeyStateSpans[k].removeClass 'erasing'
+      WritingInput[k] = 0
 
 class Connection
   constructor: () ->
@@ -82,6 +119,15 @@ conn.onmessage = (e) ->
         console.log "unknown string: #{e.data}"
   else
     if false
+    else if gNextBinaryMessageType == 'binInputs'
+      fr = new FileReader()
+      fr.readAsArrayBuffer(e.data)
+      fr.onloadend = () ->
+        ab = fr.result
+        FrameInputBytes = new Uint8Array(ab)
+        frameCountChanged(FrameInputBytes.length)
+        frameChanged()
+
     else if gNextBinaryMessageType == 'binFrameGfx'
       fr = new FileReader()
       fr.readAsArrayBuffer(e.data)
@@ -120,8 +166,7 @@ $('#fm2File').on 'change', (e) ->
       text = fr.result
       lines = text.split("\n")
       inputLines = _.filter lines, (l) -> l.match /^\|/
-      frameCountInput.value = ''+inputLines.length
-      frameCountChanged()
+      frameCountChanged(inputLines.length)
       frameNumbers = $('#frameNumbers')[0]
       frameInputs = $('#frameInputs')[0]
       _.each inputLines, (inputLine, i) ->
@@ -148,22 +193,34 @@ for i in [0...FrameScrollerCount]
       $("<div>.</div>").appendTo(frameInputDiv)[0]
     FrameScrollerInputBits.push inputBits
 
+    $(frameInputDiv).on 'mousemove', (e) ->
+      n = i + CurFrame - FrameScrollerFocus
+      return if n<0
+      _.each WritingInput, (v,k) ->
+        bit = InputLetterBits.indexOf k
+        if v == WRITE
+          FrameInputBytes[n] |= (1<<bit)
+          FrameInputBytesChanged = true
+          frameChanged()
+        else if v == ERASE
+          FrameInputBytes[n] &= ~(1<<bit)
+          FrameInputBytesChanged = true
+          frameChanged()
+
     if i == FrameScrollerFocus
       $(frameNumDiv).addClass 'focus'
       $(frameInputDiv).addClass 'focus'
   f(i)
 
-InputBits = "ABSTUDLR"
 frameN = document.getElementById 'frameN'
 frameChanged = (v) ->
   if not v?
     v = parseInt(frameN.value)
-  frame = Math.round(v)
-  frame = 0 if isNaN(frame)
-  frame = 0 if frame<1
-  frameN.value = ''+frame
-  if frame > FrameCount
-    frameCountInput.value = '' + frame
+  CurFrame = v|0
+  CurFrame = 0 if CurFrame<1
+  frameN.value = ''+CurFrame
+  if CurFrame > FrameCount
+    frameCountInput.value = '' + CurFrame
     frameCountChanged()
     return
 
@@ -171,10 +228,10 @@ frameChanged = (v) ->
     FrameInputBytesChanged = false
     conn.send new Blob(['setFrameInputs:',FrameInputBytes])
   conn.send new Blob(['getFrame:'+frameN.value])
-  $('#timelineControls #timepos').css { left: (512*(frame/FrameCount))+'px' }
+  $('#timelineControls #timepos').css { left: (512*(CurFrame/FrameCount))+'px' }
 
   _.each FrameScrollerNumbers, (frameNumDiv, i) ->
-    n = i + frame - FrameScrollerFocus
+    n = i + CurFrame - FrameScrollerFocus
     if n<0
       frameNumDiv.innerText = ' '
       _.each FrameScrollerInputBits[i], (div) ->
@@ -183,18 +240,21 @@ frameChanged = (v) ->
       frameNumDiv.innerText = ''+n
       _.each FrameScrollerInputBits[i], (div, b) ->
         bitOn = 0 != (FrameInputBytes[n] & (1<<b))
-        div.innerText = if bitOn then InputBits[b] else '.'
+        div.innerText = if bitOn then InputLetterBits[b] else '.'
 
 $(frameN).on 'change', frameChanged
 
 frameCountInput = document.getElementById 'frameCount'
-frameCountChanged = () ->
-  FrameCount = parseInt frameCountInput.value
-  FrameCount = 1 if isNaN FrameCount
+frameCountChanged = (v) ->
+  if not v?
+    v = parseInt(frameCountInput.value)
+  FrameCount = v|0
   FrameCount = 1 if FrameCount<1
   oldArray = FrameInputBytes
   FrameInputBytes = new Uint8Array(FrameCount)
-  FrameInputBytes.set(oldArray)
+  for i in [0...FrameCount]
+    if (i<FrameInputBytes.length) && (i<oldArray.length)
+      FrameInputBytes[i] = oldArray[i]
   frameCountInput.value = ''+FrameCount
   frameChanged()
 $(frameCountInput).on 'change', frameCountChanged

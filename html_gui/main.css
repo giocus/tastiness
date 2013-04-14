@@ -6,6 +6,9 @@ input[type=text] {
   -webkit-user-select: text;
   user-select: text;
 }
+.clear {
+  clear:both;
+}
 
 #hud {
   position:relative;
@@ -60,10 +63,13 @@ input[type=text] {
   float:right;
 }
 #inputControls {
-  margin-top:6em;
+  margin-top:3em;
   font-family:Inconsolata;
   font-size:13px;
-  background:#ccffcc;
+}
+#inputScroller {
+  margin-top: 2em;
+  cursor:default;
 }
 #frameNumbers, #frameInputs {
   white-space:pre;
@@ -91,5 +97,19 @@ input[type=text] {
   left:3px;
 }
 #inputScroller .focus {
-  background:#bbeebb;
+  background:#ddddee;
+}
+#keyState {
+  margin-top: 1em;
+  color:#aaa;
+  font-weight:bold;
+  font-size:14px;
+}
+#keyState span.writing {
+  color:green;
+  background:#ccffcc;
+}
+#keyState span.erasing {
+  color:red;
+  background:#ffcccc;
 }
