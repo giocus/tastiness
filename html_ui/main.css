@@ -2,7 +2,7 @@
   -webkit-user-select: none;
   user-select: none;
 }
-input[type=text] {
+input[type=text], textarea {
   -webkit-user-select: text;
   user-select: text;
 }
@@ -112,4 +112,21 @@ input[type=text] {
 #keyState span.erasing {
   color:red;
   background:#ffcccc;
+}
+
+#luaControls {
+    position:absolute;
+    top:485px;
+    left:560px;
+}
+#luaControls > div {
+    float: left;
+}
+#luaControls textarea {
+    font-family: Inconsolata;
+    font-size:14px;
+    width:580px;
+    height:100px;
+    margin-right: 4em;
+    white-space:pre;
 }

@@ -38,7 +38,7 @@ env = Environment(options = opts)
 #### Uncomment this for a public release ###
 #env.Append(CPPDEFINES=["PUBLIC_RELEASE"])
 env['DEBUG'] = 0
-env['LUA'] = 0
+env['LUA'] = 1
 ############################################
 
 # LSB_FIRST must be off for PPC to compile

@@ -38,6 +38,8 @@ FrameCount = 0
 FrameInputBytes = new Uint8Array(FrameCount)
 FrameInputBytesChanged = false
 
+LuaSourceChanged = false
+
 FrameScrollerCount = 47
 FrameScrollerNumbers = []
 FrameScrollerInputBits = []
@@ -54,13 +56,20 @@ copyTypedArray = (arr, con, len) ->
   return newArray
 
 setFrameInput = (frame, input) ->
+  change = false
   if frame >= FrameInputBytes.length
     FrameInputBytes = copyTypedArray FrameInputBytes, Uint8Array, frame+100
+    change = true
   if frame >= FrameCount
     FrameCount = frame+1
-  FrameInputBytes[frame] = input|0
-  FrameInputBytesChanged = true
-  frameChanged()
+    change = true
+  newv = input|0
+  if FrameInputBytes[frame] != newv
+    FrameInputBytes[frame] = newv
+    change = true
+  if change
+    FrameInputBytesChanged = true
+    frameChanged()
 
 KeyStateSpans = {}
 _.each InputLetters, (k) ->
@@ -129,6 +138,8 @@ conn.onmessage = (e) ->
       try
         m = JSON.parse e.data
         if false
+        else if m.t == 'luaOutput'
+          $('#luaOutput')[0].innerText = m.luaOutput
         else
           console.log "unknown message:",m
       catch e
@@ -163,6 +174,12 @@ conn.onmessage = (e) ->
             RamSpans[i].innerText = hexnum(newRam[i], 2)
             $(RamSpans[i]).addClass 'changed'
         OldRam = newRam
+
+    else if gNextBinaryMessageType == 'binFrameLuaOutput'
+      fr = new FileReader()
+      fr.readAsText(e.data)
+      fr.onloadend = () ->
+        $('#luaOutput')[0].innerText = fr.result
     else
       console.log "unknown gNextBinaryMessageType: #{gNextBinaryMessageType}"
 
@@ -239,6 +256,11 @@ frameChanged = (v) ->
   if FrameInputBytesChanged
     FrameInputBytesChanged = false
     conn.send new Blob(['setFrameInputs:',FrameInputBytes])
+
+  if LuaSourceChanged
+    LuaSourceChanged = false
+    conn.send new Blob(['setLuaSource:',$('#luaSource').val()])
+
   conn.send new Blob(['getFrame:'+frameN.value])
   $('#timelineControls #timepos').css { left: (512*(CurFrame/FrameCount))+'px' }
 
@@ -275,5 +297,13 @@ $('#timelineControls input[type=button]').on 'click', (e) ->
   delta = parseInt e.currentTarget.value
   frame = parseInt frameN.value
   frameChanged(frame+delta)
+
+luaSourceChanged = () ->
+  LuaSourceChanged = true
+  frameChanged()
+
+
+$('#luaSource').on 'keyup', luaSourceChanged
+$('#luaSource').on 'change', luaSourceChanged
 
 frameChanged()
