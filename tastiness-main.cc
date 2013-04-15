@@ -8,10 +8,13 @@ extern "C" {
 }
 
 //timeline...
+//gEmuInitialState + gJoyStates[0] -> gEmuStates[0]
 //gEmuStates[0] + gJoyStates[1] -> gEmuStates[1]
 vector<uint8> gEmuInitialState;
 vector<vector<uint8> > gEmuStates;
 vector<uint8> gJoyStates;
+
+vector<uint16> gRamBlackoutBytes;
 
 string gLuaLoadError;
 string gLuaOutput;
@@ -29,15 +32,16 @@ void send_bin(mg_connection* conn, char* msgt, unsigned char* data, int data_len
 void cmd_openRom(mg_connection* conn, char* data, int data_len);
 void cmd_getFrame(mg_connection* conn, char* data, int data_len);
 void cmd_setFrameInputs(mg_connection* conn, char* data, int data_len);
+void cmd_setRamBlackoutBytes(mg_connection* conn, char* data, int data_len);
 void cmd_setLuaSource(mg_connection* conn, char* data, int data_len);
 
 int websocket_data_handler(mg_connection *conn, int flags, char *data, size_t data_len) {
-  char* colon = strnstr(data, ":", 16);
+  char* colon = strnstr(data, ":", 64);
   if(colon == 0) {
       printf("ERROR: received invalid websocket frame (no command) - terminating connection\n");
       return 0;
   }
-  char commandName[16];
+  char commandName[64];
   memcpy(commandName, data, colon-data);
   commandName[colon-data] = 0;
 
@@ -52,6 +56,7 @@ int websocket_data_handler(mg_connection *conn, int flags, char *data, size_t da
   CMD(openRom)
   CMD(getFrame)
   CMD(setFrameInputs)
+  CMD(setRamBlackoutBytes)
   CMD(setLuaSource)
 #undef CMD
   else {
@@ -245,6 +250,16 @@ void cmd_setFrameInputs(mg_connection* conn, char* data, int data_len) {
   printf("gEmuStates.size(): %d\n", (int)gEmuStates.size());
 }
 
+void cmd_setRamBlackoutBytes(mg_connection* conn, char* data, int data_len) {
+  gRamBlackoutBytes.resize(data_len/2);
+  memcpy(&gRamBlackoutBytes[0], data, data_len);
+  printf("gRamBlackoutBytes.size(): %d\n", gRamBlackoutBytes.size());
+  for(size_t i=0; i<gRamBlackoutBytes.size(); i++) {
+    printf("gRamBlackoutBytes[%d]: %d\n", i, gRamBlackoutBytes[i]);
+  }
+  gEmuStates.clear();
+}
+
 void cmd_setLuaSource(mg_connection* conn, char* data, int data_len) {
   int error = luaL_loadbuffer(gLuaState, data, data_len, "luaSource");
   if(error) {
@@ -265,7 +280,7 @@ void cmd_getFrame(mg_connection* conn, char* data, int data_len) {
     return;
   }
 
-  char buf[32];
+  char buf[256];
   strncpy(buf, data, data_len);
   buf[data_len]=0;
   int frame = atoi(buf);
@@ -296,6 +311,14 @@ void cmd_getFrame(mg_connection* conn, char* data, int data_len) {
   //printf("real stepped into frame %d, input %02x, ram hash %016llx\n", frame, getJoyStateForFrame(frame), CityHash64((const char*)RAM, 0x800));
 
   send_bin(gConn, "binFrameRam", RAM, 0x800);
+
+  static uint8 ramForHash[0x800];
+  memcpy(ramForHash, RAM, 0x800);
+  for(size_t i=0; i<gRamBlackoutBytes.size(); i++) {
+    ramForHash[gRamBlackoutBytes[i]] = 0;
+  }
+  sprintf(buf, "{\"t\":\"ramHash\", \"ramHash\":\"%016llx\"}", CityHash64((const char*)ramForHash, 0x800));
+  send_txt(gConn, buf);
 
   static vector<uint32> palette;
   Emulator::GetPalette(palette);

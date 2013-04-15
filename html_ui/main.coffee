@@ -28,6 +28,7 @@ createRamSpans = () ->
 createRamSpans()
 
 OldRam = new Uint8Array(0x800)
+OldRamHash = null
 
 ScreenCanvas = $('#screenCanvas')[0]
 ScreenContext = ScreenCanvas.getContext '2d'
@@ -38,6 +39,9 @@ FrameCount = 0
 FrameInputBytes = new Uint8Array(FrameCount)
 FrameInputBytesChanged = false
 
+RamBlackoutBytes = []
+RamBlackoutBytesChanged = false
+
 LuaSourceChanged = false
 
 FrameScrollerCount = 47
@@ -47,6 +51,36 @@ FrameScrollerFocus = 5
 
 InputLetters = "RLDUTSBA"
 InputLetterBits = "ABSTUDLR" #InputLetters in bit order
+
+ramBlackoutBytesChanged = () ->
+  RamBlackoutBytes.sort (a,b) -> a-b
+  RamBlackoutBytes = _.uniq RamBlackoutBytes
+  $RamSpans.removeClass 'blackout'
+  _.each RamBlackoutBytes, (i) ->
+    $(RamSpans[i]).addClass 'blackout'
+
+  RamBlackoutBytesChanged = true
+  $('#ramBlackoutBytes').val(RamBlackoutBytes.join(','))
+  frameChanged()
+
+toggleRamByteBlackout = (ramOffset) ->
+  if -1 == RamBlackoutBytes.indexOf ramOffset
+    RamBlackoutBytes.push ramOffset
+    $(RamSpans[ramOffset]).addClass 'blackout'
+  else
+    RamBlackoutBytes = _.without RamBlackoutBytes, ramOffset
+    $(RamSpans[ramOffset]).removeClass 'blackout'
+  ramBlackoutBytesChanged()
+
+$('#ramBlackoutBytes').on 'change', (e) ->
+  strs = $('#ramBlackoutBytes').val().split(/,/g)
+  RamBlackoutBytes = _.map strs, (i) -> parseInt(i)
+  RamBlackoutBytes = _.reject RamBlackoutBytes, isNaN
+  ramBlackoutBytesChanged()
+
+_.each RamSpans, (span, i) ->
+  $(span).on 'click', (e) ->
+    toggleRamByteBlackout i
 
 copyTypedArray = (arr, con, len) ->
   newArray = new con(len)
@@ -138,8 +172,13 @@ conn.onmessage = (e) ->
       try
         m = JSON.parse e.data
         if false
-        else if m.t == 'luaOutput'
-          $('#luaOutput')[0].innerText = m.luaOutput
+        else if m.t == 'ramHash'
+          $('#ramHash')[0].innerText = m.ramHash
+          if OldRamHash != m.ramHash
+            $('#ramHash').addClass 'changed'
+          else
+            $('#ramHash').removeClass 'changed'
+          OldRamHash = m.ramHash
         else
           console.log "unknown message:",m
       catch e
@@ -256,6 +295,11 @@ frameChanged = (v) ->
   if FrameInputBytesChanged
     FrameInputBytesChanged = false
     conn.send new Blob(['setFrameInputs:',FrameInputBytes])
+
+  if RamBlackoutBytesChanged
+    RamBlackoutBytesChanged = false
+    blob = copyTypedArray(RamBlackoutBytes,Uint16Array,RamBlackoutBytes.length)
+    conn.send new Blob(['setRamBlackoutBytes:',blob])
 
   if LuaSourceChanged
     LuaSourceChanged = false
