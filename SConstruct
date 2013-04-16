@@ -39,6 +39,7 @@ env = Environment(options = opts)
 #env.Append(CPPDEFINES=["PUBLIC_RELEASE"])
 env['DEBUG'] = 0
 env['LUA'] = 1
+env['CLANG'] = 1
 ############################################
 
 # LSB_FIRST must be off for PPC to compile
@@ -71,6 +72,7 @@ print "platform: ", env['PLATFORM']
 if env['CLANG']:
   env.Replace(CC='clang')
   env.Replace(CXX='clang++')
+  env.Append(CXXFLAGS = "-Wno-c++11-extensions")
 
 # special flags for cygwin
 # we have to do this here so that the function and lib checks will go through mingw
