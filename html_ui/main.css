@@ -120,34 +120,45 @@ input[type=text], textarea, #ramHash {
 }
 
 #luaControls {
-    position:absolute;
-    top:530px;
-    left:560px;
+  position:absolute;
+  top:560px;
+  left:560px;
 }
 #luaControls > div {
-    float: left;
+  float: left;
 }
 #luaControls textarea {
-    font-family: Inconsolata;
-    font-size:14px;
-    width:580px;
-    height:100px;
-    margin-right: 4em;
-    white-space:pre;
+  font-family: Inconsolata;
+  font-size:14px;
+  width:580px;
+  height:100px;
+  margin-right: 4em;
+  white-space:pre;
 }
 
 #ramControls {
-    position:absolute;
-    top:490px;
-    left:560px;
+  position:absolute;
+  top:490px;
+  left:560px;
 }
-#ramControls > div {
-    float: left;
+#ramHash,#aStarH {
+  font-family: Inconsolata;
+  margin-right:2em;
 }
-#ramHash {
-    font-family: Inconsolata;
-    margin-right:2em;
+#nextNodes {
+  margin-top: 1em;
+  font-family: Inconsolata;
+  font-size:15px;
+}
+#nextNodes .inputLink {
+  margin-right:2em;
+  color:blue;
+  text-decoration:underline;
+  cursor:pointer;
+}
+#ramControls td.label {
+  text-align:right;
 }
 #ramBlackoutBytes {
-    width: 30em;
+  width: 30em;
 }

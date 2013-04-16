@@ -18,11 +18,12 @@ vector<InputState> gInputTimeline;
 
 vector<uint16> gRamBlackoutBytes;
 
+lua_State* gLuaState;
 string gLuaLoadError;
 string gLuaOutput;
 bool gLuaCodeIsValid = false;
 
-lua_State* gLuaState;
+double gLuaAStarH;
 
 struct mg_connection* gConn;
 
@@ -110,9 +111,16 @@ static int l_get_ram(lua_State* L) {
   return 1;
 }
 
+static int l_set_astar(lua_State* L) {
+  gLuaAStarH = luaL_checknumber(L, -1);
+  lua_pop(L, 1);
+  return 1;
+}
+
 static const struct luaL_reg mylib [] = {
   {"print", l_my_print},
-  {"get_ram", l_get_ram},
+  {"ram", l_get_ram},
+  {"setAStar", l_set_astar},
   {NULL, NULL}
 };
 
@@ -275,7 +283,7 @@ struct LuaScriptResult {
   double aStarH;
 };
 void runLuaAgainstCurrentEmulatorState(LuaScriptResult& result) {
-  result.aStarH = 1e6;
+  result.aStarH = gLuaAStarH = 1e6;
   if(!gLuaLoadError.empty()) {
     result.output = gLuaLoadError;
   } else if(gLuaCodeIsValid) {
@@ -286,6 +294,7 @@ void runLuaAgainstCurrentEmulatorState(LuaScriptResult& result) {
       result.output = string("Error running lua code:\n") + lua_tostring(gLuaState, -1);
       lua_pop(gLuaState, 1);
     } else {
+      result.aStarH = gLuaAStarH;
       result.output = gLuaOutput;
     }
   }
@@ -314,7 +323,7 @@ void getDistinctNextNodesFromCurrentEmulatorState(map<InputState, NextNodeInfo>&
 
   vector<uint8> thisState;
   Emulator::SaveUncompressed(&thisState);
-  for(InputState inputState=0; inputState<0xff; inputState++) {
+  for(int inputState=0; inputState<256; inputState++) {
     Emulator::LoadUncompressed(&thisState);
     Emulator::Step(inputState, &gfx, &sound, &ssize, 2);
     uint64 hash = getRamHashForCurrentEmulatorState();
@@ -331,7 +340,7 @@ void cmd_getFrame(mg_connection* conn, char* data, int data_len) {
     return;
   }
 
-  char buf[65536];
+  static char buf[256 * 1024];
   strncpy(buf, data, data_len);
   buf[data_len]=0;
   int frame = atoi(buf);
@@ -363,9 +372,6 @@ void cmd_getFrame(mg_connection* conn, char* data, int data_len) {
 
   send_bin(gConn, "binFrameRam", RAM, 0x800);
 
-  sprintf(buf, "{\"t\":\"ramHash\", \"ramHash\":\"%016llx\"}", getRamHashForCurrentEmulatorState());
-  send_txt(gConn, buf);
-
   static vector<uint32> palette;
   Emulator::GetPalette(palette);
   static uint32 raw[WIDTH*HEIGHT];
@@ -380,15 +386,19 @@ void cmd_getFrame(mg_connection* conn, char* data, int data_len) {
   runLuaAgainstCurrentEmulatorState(scriptResult);
   send_bin(gConn, "binFrameLuaOutput", (uint8*)scriptResult.output.c_str(), scriptResult.output.size());
 
+  sprintf(buf, "{\"t\":\"ramHash\",\"ramHash\":\"%016llx\",\"aStarH\":%f}", getRamHashForCurrentEmulatorState(), scriptResult.aStarH);
+  send_txt(gConn, buf);
+
   map<InputState, NextNodeInfo> nextNodeInfos;
   getDistinctNextNodesFromCurrentEmulatorState(nextNodeInfos);
   char* c = buf;
-  c += sprintf(c, "{\"t\":\"nextNodeInfos\"");
+  c += sprintf(c, "{\"t\":\"nextNodeInfos\",\"nextNodes\":{");
   map<InputState, NextNodeInfo>::const_iterator i = nextNodeInfos.begin();
   while(i != nextNodeInfos.end()) {
-    c+= sprintf(c, ",\"%d\":{\"ramHash\":\"%016llx\",\"aStarH\":\"%f\"}", i->first, i->second.hash, i->second.aStarH);
+    if(i != nextNodeInfos.begin()) *c++ = ',';
+    c+= sprintf(c, "\"%d\":{\"ramHash\":\"%016llx\",\"aStarH\":%f}", i->first, i->second.hash, i->second.aStarH);
     ++i;
   }
-  c += sprintf(c, "}");
+  c += sprintf(c, "}}");
   send_txt(gConn, buf);
 }

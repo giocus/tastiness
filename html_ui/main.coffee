@@ -89,7 +89,7 @@ copyTypedArray = (arr, con, len) ->
     newArray[i] = arr[i]
   return newArray
 
-setFrameInput = (frame, input) ->
+setFrameInput = (frame, input, forceFrameChanged) ->
   change = false
   if frame >= FrameInputBytes.length
     FrameInputBytes = copyTypedArray FrameInputBytes, Uint8Array, frame+100
@@ -101,7 +101,7 @@ setFrameInput = (frame, input) ->
   if FrameInputBytes[frame] != newv
     FrameInputBytes[frame] = newv
     change = true
-  if change
+  if forceFrameChanged or change
     FrameInputBytesChanged = true
     frameChanged()
 
@@ -139,6 +139,15 @@ updateInputStates = () ->
       KeyStateSpans[k].removeClass 'erasing'
       WritingInput[k] = 0
 
+inputStateToText = (inputState) ->
+  t = _.map InputLetters, (l) ->
+    bit = 1<<InputLetterBits.indexOf(l)
+    if 0 < (inputState & bit)
+      return l
+    else
+      return '.'
+  t.join ''
+
 class Connection
   constructor: () ->
     @openSocket()
@@ -171,18 +180,32 @@ conn.onmessage = (e) ->
     else
       try
         m = JSON.parse e.data
-        if false
-        else if m.t == 'ramHash'
-          $('#ramHash')[0].innerText = m.ramHash
-          if OldRamHash != m.ramHash
-            $('#ramHash').addClass 'changed'
-          else
-            $('#ramHash').removeClass 'changed'
-          OldRamHash = m.ramHash
+      catch x
+        console.log "unknown string:", e.data, x
+        return
+
+      if false
+      else if m.t == 'ramHash'
+        $('#ramHash')[0].innerText = m.ramHash
+        $('#aStarH')[0].innerText = m.aStarH
+        if OldRamHash != m.ramHash
+          $('#ramHash').addClass 'changed'
         else
-          console.log "unknown message:",m
-      catch e
-        console.log "unknown string: #{e.data}"
+          $('#ramHash').removeClass 'changed'
+        OldRamHash = m.ramHash
+      else if m.t == 'nextNodeInfos'
+        nextNodesDiv = $('#nextNodes')[0]
+        nextNodesDiv.innerHTML = ''
+        $.each m.nextNodes, (inputState,info) ->
+          inputText = inputStateToText inputState
+          div = $("<div><span class='inputLink'>#{inputText}</span>#{sprintf("%.3f", info.aStarH)}</div>").appendTo(nextNodesDiv)
+          span = $('.inputLink', div)
+          span.on 'click', () ->
+            console.log 'asdf'
+            setFrameInput CurFrame+1, inputState
+            frameChanged(CurFrame+1)
+      else
+        console.log "unknown message:",m
   else
     if false
     else if gNextBinaryMessageType == 'binInputs'

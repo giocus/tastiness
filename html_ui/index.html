@@ -3,6 +3,8 @@
   <head>
     <script src="http://ajax.googleapis.com/ajax/libs/jquery/1.9.1/jquery.min.js"></script>
     <script src="http://underscorejs.org/underscore-min.js"></script>
+    <script src="sprintf-0.7-beta1.js"></script>
+
     <link rel="stylesheet" type="text/css" href="main.css">
   </head>
   <body>
@@ -33,12 +35,15 @@
       </div>
       <div class='clear'></div>
       <div id='keyState'></div>
+      <div id='nextNodes'>
+        <table></table>
+      </div>
     </div>
     <div id='ramControls'>
-        <div>
-            RAM hash: <span id='ramHash'>asdf</span>
-            RAM blackout bytes: <input type='text' id='ramBlackoutBytes' value='' />
-        </div>
+      <table>
+        <tr><td class='label'>RAM hash:</td><td><span id='ramHash'>asdf</span></td>  <td>RAM blackout bytes: <input type='text' id='ramBlackoutBytes' value='' /></td>  </tr>
+        <tr><td class='label'>A* estimate:</td><td><span id='aStarH'>1000000</span></td></tr>
+      </table>
     </div>
     <div id='luaControls'>
         <div>
