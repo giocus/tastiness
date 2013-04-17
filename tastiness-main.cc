@@ -336,6 +336,7 @@ void getDistinctNextNodesFromCurrentEmulatorState(map<InputState, NextNodeInfo>&
   int32 *sound;
   int32 ssize;
 
+  LuaScriptResult scriptResult;
   set<uint64> foundHashes;
 
   vector<uint8> thisState;
@@ -346,8 +347,9 @@ void getDistinctNextNodesFromCurrentEmulatorState(map<InputState, NextNodeInfo>&
     uint64 hash = getRamHashForCurrentEmulatorState();
     if(foundHashes.count(hash) == 0) {
       foundHashes.insert(hash);
+      runLuaAgainstCurrentEmulatorState(scriptResult);
       nextNodeInfos[inputState].hash = hash;
-      nextNodeInfos[inputState].aStarH = 0;
+      nextNodeInfos[inputState].aStarH = scriptResult.aStarH;
     }
   }
 }

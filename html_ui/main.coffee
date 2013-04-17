@@ -194,6 +194,7 @@ conn.onmessage = (e) ->
         return
 
       if false
+
       else if m.t == 'ramHash'
         $('#ramHash')[0].innerText = m.ramHash
         $('#aStarH')[0].innerText = m.aStarH
@@ -202,16 +203,22 @@ conn.onmessage = (e) ->
         else
           $('#ramHash').removeClass 'changed'
         OldRamHash = m.ramHash
+
       else if m.t == 'nextNodeInfos'
         nextNodesDiv = $('#nextNodes')[0]
         nextNodesDiv.innerHTML = ''
-        $.each m.nextNodes, (inputState,info) ->
-          inputText = inputStateToText inputState
-          div = $("<div><span class='inputLink'>#{inputText}</span>#{sprintf("%.3f", info.aStarH)}</div>").appendTo(nextNodesDiv)
+        nextNodes = []
+        _.each m.nextNodes, (info, inputState) ->
+          info.inputState = parseInt inputState
+          nextNodes.push info
+        nextNodes.sort (a,b) -> a.aStarH - b.aStarH
+        _.each nextNodes, (node) ->
+          inputText = inputStateToText node.inputState
+          div = $("<div><span class='inputLink'>#{inputText}</span>#{sprintf("%.4f", node.aStarH)}</div>").appendTo(nextNodesDiv)
           span = $('.inputLink', div)
           span.on 'click', () ->
             console.log 'asdf'
-            setFrameInput CurFrame+1, inputState
+            setFrameInput CurFrame+1, node.inputState
             frameChanged(CurFrame+1)
       else
         console.log "unknown message:",m

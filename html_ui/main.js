@@ -290,7 +290,7 @@
   conn = new Connection();
 
   conn.onmessage = function(e) {
-    var fr, m, nextNodesDiv;
+    var fr, m, nextNodes, nextNodesDiv;
     if (typeof e.data === 'string') {
       if (e.data.match(/^bin/)) {
         return gNextBinaryMessageType = e.data;
@@ -315,14 +315,22 @@
         } else if (m.t === 'nextNodeInfos') {
           nextNodesDiv = $('#nextNodes')[0];
           nextNodesDiv.innerHTML = '';
-          return $.each(m.nextNodes, function(inputState, info) {
+          nextNodes = [];
+          _.each(m.nextNodes, function(info, inputState) {
+            info.inputState = parseInt(inputState);
+            return nextNodes.push(info);
+          });
+          nextNodes.sort(function(a, b) {
+            return a.aStarH - b.aStarH;
+          });
+          return _.each(nextNodes, function(node) {
             var div, inputText, span;
-            inputText = inputStateToText(inputState);
-            div = $("<div><span class='inputLink'>" + inputText + "</span>" + (sprintf("%.3f", info.aStarH)) + "</div>").appendTo(nextNodesDiv);
+            inputText = inputStateToText(node.inputState);
+            div = $("<div><span class='inputLink'>" + inputText + "</span>" + (sprintf("%.4f", node.aStarH)) + "</div>").appendTo(nextNodesDiv);
             span = $('.inputLink', div);
             return span.on('click', function() {
               console.log('asdf');
-              setFrameInput(CurFrame + 1, inputState);
+              setFrameInput(CurFrame + 1, node.inputState);
               return frameChanged(CurFrame + 1);
             });
           });
