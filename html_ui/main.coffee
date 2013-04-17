@@ -52,31 +52,34 @@ FrameScrollerFocus = 5
 InputLetters = "RLDUTSBA"
 InputLetterBits = "ABSTUDLR" #InputLetters in bit order
 
-ramBlackoutBytesChanged = () ->
-  RamBlackoutBytes.sort (a,b) -> a-b
-  RamBlackoutBytes = _.uniq RamBlackoutBytes
+ramBlackoutBytesChanged = (blackoutBytes) ->
+  blackoutBytes.sort (a,b) -> a-b
+  blackoutBytes = _.uniq blackoutBytes
   $RamSpans.removeClass 'blackout'
-  _.each RamBlackoutBytes, (i) ->
+  _.each blackoutBytes, (i) ->
     $(RamSpans[i]).addClass 'blackout'
 
-  RamBlackoutBytesChanged = true
-  $('#ramBlackoutBytes').val(RamBlackoutBytes.join(','))
-  frameChanged()
+  if blackoutBytes.join(',') != RamBlackoutBytes.join(',')
+    RamBlackoutBytes = blackoutBytes
+    RamBlackoutBytesChanged = true
+    $('#ramBlackoutBytes').val(blackoutBytes.join(','))
+    frameChanged()
 
 toggleRamByteBlackout = (ramOffset) ->
-  if -1 == RamBlackoutBytes.indexOf ramOffset
-    RamBlackoutBytes.push ramOffset
+  blackoutBytes = RamBlackoutBytes.slice()
+  if -1 == blackoutBytes.indexOf ramOffset
+    blackoutBytes.push ramOffset
     $(RamSpans[ramOffset]).addClass 'blackout'
   else
-    RamBlackoutBytes = _.without RamBlackoutBytes, ramOffset
+    blackoutBytes = _.without blackoutBytes, ramOffset
     $(RamSpans[ramOffset]).removeClass 'blackout'
-  ramBlackoutBytesChanged()
+  ramBlackoutBytesChanged blackoutBytes
 
 $('#ramBlackoutBytes').on 'change', (e) ->
   strs = $('#ramBlackoutBytes').val().split(/,/g)
-  RamBlackoutBytes = _.map strs, (i) -> parseInt(i)
-  RamBlackoutBytes = _.reject RamBlackoutBytes, isNaN
-  ramBlackoutBytesChanged()
+  bytes = _.map strs, (i) -> parseInt(i)
+  bytes = _.reject bytes, isNaN
+  ramBlackoutBytesChanged bytes
 
 _.each RamSpans, (span, i) ->
   $(span).on 'click', (e) ->
@@ -171,6 +174,12 @@ class Connection
   send: (m) =>
     return unless @opened
     @ws.send m
+    if false
+      console.log 'ws.send',m
+      fr = new FileReader()
+      fr.readAsText m
+      fr.onloadend = () ->
+        console.log fr.result
 
 conn = new Connection()
 conn.onmessage = (e) ->
@@ -208,12 +217,11 @@ conn.onmessage = (e) ->
         console.log "unknown message:",m
   else
     if false
-    else if gNextBinaryMessageType == 'binInputs'
+    else if gNextBinaryMessageType == 'binFrameInputs'
       fr = new FileReader()
       fr.readAsArrayBuffer(e.data)
       fr.onloadend = () ->
-        ab = fr.result
-        FrameInputBytes = new Uint8Array(ab)
+        FrameInputBytes = new Uint8Array fr.result
         frameCountChanged(FrameInputBytes.length)
         frameChanged()
 
@@ -221,8 +229,7 @@ conn.onmessage = (e) ->
       fr = new FileReader()
       fr.readAsArrayBuffer(e.data)
       fr.onloadend = () ->
-        ab = fr.result
-        ScreenImageData.data.set(new Uint8Array(ab))
+        ScreenImageData.data.set(new Uint8Array fr.result)
         ScreenContext.putImageData(ScreenImageData, 0, 0)
 
     else if gNextBinaryMessageType == 'binFrameRam'
@@ -242,6 +249,21 @@ conn.onmessage = (e) ->
       fr.readAsText(e.data)
       fr.onloadend = () ->
         $('#luaOutput')[0].innerText = fr.result
+
+    else if gNextBinaryMessageType == 'binLuaSource'
+      fr = new FileReader()
+      fr.readAsText(e.data)
+      fr.onloadend = () ->
+        $('#luaSource')[0].innerText = fr.result
+
+    else if gNextBinaryMessageType == 'binRamBlackoutBytes'
+      fr = new FileReader()
+      fr.readAsArrayBuffer(e.data)
+      fr.onloadend = () ->
+        array = new Uint16Array(fr.result)
+        blackoutBytes = _.map array, (i) -> i
+        ramBlackoutBytesChanged blackoutBytes
+
     else
       console.log "unknown gNextBinaryMessageType: #{gNextBinaryMessageType}"
 
@@ -303,6 +325,7 @@ for i in [0...FrameScrollerCount]
       $(frameInputDiv).addClass 'focus'
   f(i)
 
+sendFrameCommandsTimeout = null
 frameN = document.getElementById 'frameN'
 frameChanged = (v) ->
   if not v?
@@ -315,20 +338,6 @@ frameChanged = (v) ->
     frameCountChanged()
     return
 
-  if FrameInputBytesChanged
-    FrameInputBytesChanged = false
-    conn.send new Blob(['setFrameInputs:',FrameInputBytes])
-
-  if RamBlackoutBytesChanged
-    RamBlackoutBytesChanged = false
-    blob = copyTypedArray(RamBlackoutBytes,Uint16Array,RamBlackoutBytes.length)
-    conn.send new Blob(['setRamBlackoutBytes:',blob])
-
-  if LuaSourceChanged
-    LuaSourceChanged = false
-    conn.send new Blob(['setLuaSource:',$('#luaSource').val()])
-
-  conn.send new Blob(['getFrame:'+frameN.value])
   $('#timelineControls #timepos').css { left: (512*(CurFrame/FrameCount))+'px' }
 
   _.each FrameScrollerNumbers, (frameNumDiv, i) ->
@@ -342,6 +351,23 @@ frameChanged = (v) ->
       _.each FrameScrollerInputBits[i], (div, b) ->
         bitOn = 0 != (FrameInputBytes[n] & (1<<b))
         div.innerText = if bitOn then InputLetterBits[b] else '.'
+
+  clearTimeout sendFrameCommandsTimeout
+  sendFrameCommands = () ->
+    if FrameInputBytesChanged
+      FrameInputBytesChanged = false
+      conn.send new Blob(['setFrameInputs:',FrameInputBytes])
+
+    if RamBlackoutBytesChanged
+      RamBlackoutBytesChanged = false
+      blob = copyTypedArray(RamBlackoutBytes,Uint16Array,RamBlackoutBytes.length)
+      conn.send new Blob(['setRamBlackoutBytes:',blob])
+
+    if LuaSourceChanged
+      LuaSourceChanged = false
+      conn.send new Blob(['setLuaSource:',$('#luaSource').val()])
+    conn.send new Blob(['getFrame:'+frameN.value])
+  sendFrameCommandsTimeout = setTimeout sendFrameCommands, 100
 
 $(frameN).on 'change', frameChanged
 

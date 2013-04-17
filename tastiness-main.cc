@@ -9,6 +9,8 @@ extern "C" {
 
 typedef uint8 InputState;
 
+static pthread_mutex_t gMutex = PTHREAD_MUTEX_INITIALIZER;
+
 //timeline...
 //gEmuInitialState + gInputTimeline[0] -> gEmuStateTimeline[0]
 //gEmuStateTimeline[0] + gInputTimeline[1] -> gEmuStateTimeline[1]
@@ -19,6 +21,7 @@ vector<InputState> gInputTimeline;
 vector<uint16> gRamBlackoutBytes;
 
 lua_State* gLuaState;
+vector<uint8> gLuaSource;
 string gLuaLoadError;
 string gLuaOutput;
 bool gLuaCodeIsValid = false;
@@ -38,9 +41,12 @@ void cmd_setRamBlackoutBytes(mg_connection* conn, char* data, int data_len);
 void cmd_setLuaSource(mg_connection* conn, char* data, int data_len);
 
 int websocket_data_handler(mg_connection *conn, int flags, char *data, size_t data_len) {
+  pthread_mutex_lock(&gMutex);
+
   char* colon = strnstr(data, ":", 64);
   if(colon == 0) {
       printf("ERROR: received invalid websocket frame (no command) - terminating connection\n");
+      pthread_mutex_unlock(&gMutex);
       return 0;
   }
   char commandName[64];
@@ -50,7 +56,7 @@ int websocket_data_handler(mg_connection *conn, int flags, char *data, size_t da
   char* commandData = colon+1;
   int commandDataLen = data_len - (commandData - data);
 
-  printf("commandName: %s commandDataLen: %d\n", commandName, commandDataLen);
+  printf("thread_id: %08lx commandName: %s commandDataLen: %d\n", (long)pthread_self(), commandName, commandDataLen);
 
   uint64_t st = microTime();
   if(0);
@@ -63,18 +69,26 @@ int websocket_data_handler(mg_connection *conn, int flags, char *data, size_t da
 #undef CMD
   else {
       printf("ERROR: unhandled websocket command '%s' - terminating connection\n", commandName);
+      pthread_mutex_unlock(&gMutex);
       return 0;
   }
   uint64_t et = microTime();
   printf("command took %.3fms\n", double(et-st)/1000);
 
+  pthread_mutex_unlock(&gMutex);
   return 1;
 }
 
 void websocket_ready_handler(struct mg_connection *conn) {
+  pthread_mutex_lock(&gMutex);
+
   gConn = conn;
   printf("websocket client connected\n");
-  send_bin(conn, "binInputs", &gInputTimeline[0], gInputTimeline.size());
+  send_bin(conn, "binFrameInputs", &gInputTimeline[0], gInputTimeline.size());
+  send_bin(conn, "binLuaSource", &gLuaSource[0], gLuaSource.size());
+  send_bin(conn, "binRamBlackoutBytes", (uint8*)&gRamBlackoutBytes[0], sizeof(uint16) * gRamBlackoutBytes.size());
+
+  pthread_mutex_unlock(&gMutex);
 }
 
 static int l_my_print(lua_State* L) {
@@ -264,7 +278,10 @@ void cmd_setRamBlackoutBytes(mg_connection* conn, char* data, int data_len) {
 }
 
 void cmd_setLuaSource(mg_connection* conn, char* data, int data_len) {
-  int error = luaL_loadbuffer(gLuaState, data, data_len, "luaSource");
+  gLuaSource.resize(data_len);
+  memcpy(&gLuaSource[0], data, data_len);
+
+  int error = luaL_loadbuffer(gLuaState, (const char*)&gLuaSource[0], gLuaSource.size(), "luaSource");
   if(error) {
     gLuaLoadError = string("Error loading lua code:\n")+ lua_tostring(gLuaState, -1);
     puts(gLuaLoadError.c_str());
