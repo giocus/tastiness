@@ -1,5 +1,6 @@
 #include "tastiness.h"
 #include "mongoose.git/mongoose.h"
+#include <queue>
 
 extern "C" {
 #include <lua.h>
@@ -10,6 +11,11 @@ extern "C" {
 typedef uint8 InputState;
 
 static pthread_mutex_t gMutex = PTHREAD_MUTEX_INITIALIZER;
+
+uint8* EMU_GFX;
+int32* EMU_SOUND;
+int32 EMU_SSIZE;
+
 
 //timeline...
 //gEmuInitialState + gInputTimeline[0] -> gEmuStateTimeline[0]
@@ -39,6 +45,8 @@ void cmd_getFrame(mg_connection* conn, char* data, int data_len);
 void cmd_setFrameInputs(mg_connection* conn, char* data, int data_len);
 void cmd_setRamBlackoutBytes(mg_connection* conn, char* data, int data_len);
 void cmd_setLuaSource(mg_connection* conn, char* data, int data_len);
+void cmd_initAStar(mg_connection* conn, char* data, int data_len);
+void cmd_workAStar(mg_connection* conn, char* data, int data_len);
 
 int websocket_data_handler(mg_connection *conn, int flags, char *data, size_t data_len) {
   pthread_mutex_lock(&gMutex);
@@ -66,6 +74,8 @@ int websocket_data_handler(mg_connection *conn, int flags, char *data, size_t da
   CMD(setFrameInputs)
   CMD(setRamBlackoutBytes)
   CMD(setLuaSource)
+  CMD(initAStar)
+  CMD(workAStar)
 #undef CMD
   else {
       printf("ERROR: unhandled websocket command '%s' - terminating connection\n", commandName);
@@ -332,10 +342,6 @@ struct NextNodeInfo {
 };
 
 void getDistinctNextNodesFromCurrentEmulatorState(map<InputState, NextNodeInfo>& nextNodeInfos) {
-  uint8* gfx;
-  int32 *sound;
-  int32 ssize;
-
   LuaScriptResult scriptResult;
   set<uint64> foundHashes;
 
@@ -343,7 +349,7 @@ void getDistinctNextNodesFromCurrentEmulatorState(map<InputState, NextNodeInfo>&
   Emulator::SaveUncompressed(&thisState);
   for(int inputState=0; inputState<256; inputState++) {
     Emulator::LoadUncompressed(&thisState);
-    Emulator::Step(inputState, &gfx, &sound, &ssize, 2);
+    Emulator::Step(inputState, &EMU_GFX, &EMU_SOUND, &EMU_SSIZE, 2);
     uint64 hash = getRamHashForCurrentEmulatorState();
     if(foundHashes.count(hash) == 0) {
       foundHashes.insert(hash);
@@ -352,6 +358,190 @@ void getDistinctNextNodesFromCurrentEmulatorState(map<InputState, NextNodeInfo>&
       nextNodeInfos[inputState].aStarH = scriptResult.aStarH;
     }
   }
+}
+
+struct AStar {
+  struct Node {
+    boost::shared_ptr<vector<uint8> > emuState; //this is cleared when the node enters the closed set
+    double f; //estimated cost to goal
+    uint32 g; //cost from the start node
+    double v() const { return f+g; }
+  };
+
+  class CompareHashesByNodeGplusH {
+    AStar& astar;
+  public:
+    CompareHashesByNodeGplusH(AStar& astar) : astar(astar) {}
+    bool operator()(uint64 a, uint64 b) const {
+      return astar.nodesByHash[a].v() > astar.nodesByHash[b].v();
+    }
+  };
+
+  boost::unordered_map<uint64, Node> nodesByHash;
+  priority_queue<uint64, vector<uint64>, CompareHashesByNodeGplusH> openHashPriorities;
+  set<uint64> openHashes;
+  set<uint64> closedHashes;
+  map<uint64, uint64> hashParents;
+  vector<uint8> startEmuState;
+
+  AStar() : openHashPriorities(CompareHashesByNodeGplusH(*this)) {}
+
+  struct Status {
+    uint64 openNodes;
+    uint64 closedNodes;
+    vector<InputState> pathToBestNode;
+  };
+  Status getStatus() {
+    Status s;
+    s.openNodes = openHashes.size();
+    s.closedNodes = closedHashes.size();
+    getInputStatePath(s.pathToBestNode, openHashPriorities.top());
+    return s;
+  }
+
+  void getInputStatePath(vector<InputState>& result, uint64 childNodeHash) {
+    Emulator::LoadUncompressed(&startEmuState);
+    uint64 startHash = getRamHashForCurrentEmulatorState();
+
+    vector<uint64> reverseHashPath;
+    uint64 hash = childNodeHash;
+    while(hash != startHash) {
+      reverseHashPath.push_back(hash);
+      hash = hashParents[hash];
+      CHECK(hash != 0 && "parent hash not found");
+    }
+
+    vector<uint8> curState = startEmuState;
+
+    result.clear();
+    for(int i=reverseHashPath.size()-1; i>=0; i--) {
+      uint64 wantHash = reverseHashPath[i];
+      int inputState;
+      for(inputState=0; inputState<256; inputState++) {
+        Emulator::LoadUncompressed(&curState);
+        Emulator::Step(inputState, &EMU_GFX, &EMU_SOUND, &EMU_SSIZE, 2);
+        uint64 newHash = getRamHashForCurrentEmulatorState();
+        if(newHash == wantHash) {
+          result.push_back(inputState);
+          Emulator::SaveUncompressed(&curState);
+          break;
+        }
+      }
+      CHECK(inputState != 256 && "could not find inputState");
+    }
+  }
+
+  void addCurrentEmulatorStateAsNewNode(uint64 hash=0, uint32 g=0) {
+    vector<uint8>* emuState = new vector<uint8>();
+    Emulator::SaveUncompressed(emuState);
+
+    LuaScriptResult scriptResult;
+    runLuaAgainstCurrentEmulatorState(scriptResult);
+    if(scriptResult.aStarH < 0) {
+      CHECK(false && "handle goal complete");
+    }
+
+    Node n;
+    n.emuState = boost::shared_ptr<vector<uint8> >(emuState);
+    n.g = g;
+    n.f = scriptResult.aStarH;
+
+    if(hash == 0) {
+      hash = getRamHashForCurrentEmulatorState();
+    }
+
+    nodesByHash.insert(boost::unordered_map<uint64, Node>::value_type(hash, n));
+    openHashes.insert(hash);
+    openHashPriorities.push(hash);
+  }
+
+  void initFromCurrentEmulatorState() {
+    Emulator::SaveUncompressed(&startEmuState);
+    addCurrentEmulatorStateAsNewNode();
+  }
+
+  void work1() {
+    uint64 oldHash = openHashPriorities.top();
+    openHashPriorities.pop();
+    openHashes.erase(oldHash);
+    closedHashes.insert(oldHash);
+
+    Node& oldNode = nodesByHash[oldHash];
+
+    CHECK(oldNode.emuState && "nodes in the open set should have emuState");
+
+    for(int inputState=0; inputState<256; inputState++) {
+      Emulator::LoadUncompressed(oldNode.emuState.get());
+      Emulator::Step(inputState, &EMU_GFX, &EMU_SOUND, &EMU_SSIZE, 2);
+      uint64 newHash = getRamHashForCurrentEmulatorState();
+      if(openHashes.count(newHash) != 0) continue; //already in open set
+      if(closedHashes.count(newHash) != 0) {
+        //in the closed set means the node has been visited, but now we have
+        //to check to see if we have improved G
+        CHECK(false && "handle re-finding node in the closed set");
+      } else {
+        addCurrentEmulatorStateAsNewNode(newHash, oldNode.g+1);
+        hashParents[newHash] = oldHash;
+      }
+    }
+  }
+};
+
+boost::shared_ptr<AStar> gAStar;
+
+void emulateToFrame(int frame) {
+  //printf("getFrame() frame: %d gEmuStateTimeline.size(): %d\n", frame, gEmuStateTimeline.size());
+  //step with frameskip as needed
+  if(gEmuStateTimeline.size() <= frame) {
+    if(gEmuStateTimeline.empty()) {
+      Emulator::LoadUncompressed(&gEmuInitialState);
+    } else {
+      Emulator::LoadUncompressed(&gEmuStateTimeline[gEmuStateTimeline.size()-1]);
+    }
+    for(int f=gEmuStateTimeline.size(); f<frame; f++) {
+      Emulator::Step(getInputStateForFrame(f), &EMU_GFX, &EMU_SOUND, &EMU_SSIZE, 2);
+      gEmuStateTimeline.resize(f+1);
+      Emulator::SaveUncompressed(&gEmuStateTimeline[f]);
+      //printf("frameskip stepped into frame %d, input %02x, ram hash %016llx\n", f, getInputStateForFrame(f), CityHash64((const char*)RAM, 0x800));
+    }
+  }
+
+  vector<uint8>& preState = (frame==0) ? gEmuInitialState : gEmuStateTimeline[frame-1];
+  Emulator::LoadUncompressed(&preState);
+  Emulator::Step(getInputStateForFrame(frame), &EMU_GFX, &EMU_SOUND, &EMU_SSIZE, 0);
+  //printf("real stepped into frame %d, input %02x, ram hash %016llx\n", frame, getInputStateForFrame(frame), CityHash64((const char*)RAM, 0x800));
+}
+
+void cmd_initAStar(mg_connection* conn, char* data, int data_len) {
+  char buf[32];
+  strncpy(buf, data, data_len);
+  buf[data_len]=0;
+  int frame = atoi(buf);
+  emulateToFrame(frame);
+
+  printf("init A* search from frame %d\n", frame);
+  gAStar = boost::shared_ptr<AStar>(new AStar());
+  gAStar->initFromCurrentEmulatorState();
+}
+void cmd_workAStar(mg_connection* conn, char* data, int data_len) {
+  uint64_t st = microTime();
+  int num = 100;
+  for(int i=0; i<num; i++) {
+    gAStar->work1();
+  }
+  uint64_t et = microTime();
+  printf("astar work %lldms/loop\n", ((et-st)/num)/1000);
+  AStar::Status s = gAStar->getStatus();
+
+  static char buf[256 * 1024];
+  char* c = buf;
+  c += sprintf(c, "{\"t\":\"aStarStatus\",\"openNodes\":%lld,\"closedNodes\":%lld,\"bestPath\":[", s.openNodes, s.closedNodes);
+  for(int i=0; i<s.pathToBestNode.size(); i++) {
+    if(i>0) *c++ = ',';
+    c += sprintf(c, "%d", s.pathToBestNode[i]);
+  }
+  c += sprintf(c, "]}");
+  send_txt(gConn, buf);
 }
 
 void cmd_getFrame(mg_connection* conn, char* data, int data_len) {
@@ -364,30 +554,7 @@ void cmd_getFrame(mg_connection* conn, char* data, int data_len) {
   buf[data_len]=0;
   int frame = atoi(buf);
 
-  uint8* gfx = 0;
-  int32 *sound = 0;
-  int32 ssize = 0;
-
-  //printf("getFrame() frame: %d gEmuStateTimeline.size(): %d\n", frame, gEmuStateTimeline.size());
-  //step with frameskip as needed
-  if(gEmuStateTimeline.size() <= frame) {
-    if(gEmuStateTimeline.empty()) {
-      Emulator::LoadUncompressed(&gEmuInitialState);
-    } else {
-      Emulator::LoadUncompressed(&gEmuStateTimeline[gEmuStateTimeline.size()-1]);
-    }
-    for(int f=gEmuStateTimeline.size(); f<frame; f++) {
-      Emulator::Step(getInputStateForFrame(f), &gfx, &sound, &ssize, 2);
-      gEmuStateTimeline.resize(f+1);
-      Emulator::SaveUncompressed(&gEmuStateTimeline[f]);
-      //printf("frameskip stepped into frame %d, input %02x, ram hash %016llx\n", f, getInputStateForFrame(f), CityHash64((const char*)RAM, 0x800));
-    }
-  }
-
-  vector<uint8>& preState = (frame==0) ? gEmuInitialState : gEmuStateTimeline[frame-1];
-  Emulator::LoadUncompressed(&preState);
-  Emulator::Step(getInputStateForFrame(frame), &gfx, &sound, &ssize, 0);
-  //printf("real stepped into frame %d, input %02x, ram hash %016llx\n", frame, getInputStateForFrame(frame), CityHash64((const char*)RAM, 0x800));
+  emulateToFrame(frame);
 
   send_bin(gConn, "binFrameRam", RAM, 0x800);
 
@@ -396,7 +563,7 @@ void cmd_getFrame(mg_connection* conn, char* data, int data_len) {
   static uint32 raw[WIDTH*HEIGHT];
   for(int y=0; y<HEIGHT; y++) {
     for(int x=0; x<WIDTH; x++) {
-      raw[y*WIDTH+x] = palette[gfx[y*WIDTH+x]];
+      raw[y*WIDTH+x] = palette[EMU_GFX[y*WIDTH+x]];
     }
   }
   send_bin(gConn, "binFrameGfx", (uint8*)raw, WIDTH*HEIGHT*4);

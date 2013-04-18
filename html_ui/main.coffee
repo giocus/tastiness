@@ -103,9 +103,11 @@ setFrameInput = (frame, input, forceFrameChanged) ->
   newv = input|0
   if FrameInputBytes[frame] != newv
     FrameInputBytes[frame] = newv
-    change = true
-  if forceFrameChanged or change
     FrameInputBytesChanged = true
+    change = true
+  if forceFrameChanged?
+    change = forceFrameChanged
+  if change
     frameChanged()
 
 KeyStateSpans = {}
@@ -203,6 +205,12 @@ conn.onmessage = (e) ->
         else
           $('#ramHash').removeClass 'changed'
         OldRamHash = m.ramHash
+
+      else if m.t == 'aStarStatus'
+        console.log m
+        _.each m.bestPath, (inputState, i) ->
+          setFrameInput AStarInitialized+i+1, inputState, false
+          frameChanged()
 
       else if m.t == 'nextNodeInfos'
         nextNodesDiv = $('#nextNodes')[0]
@@ -336,7 +344,7 @@ sendFrameCommandsTimeout = null
 frameN = document.getElementById 'frameN'
 frameChanged = (v) ->
   if not v?
-    v = parseInt(frameN.value)
+    v = parseInt frameN.value
   CurFrame = v|0
   CurFrame = 0 if CurFrame<1
   frameN.value = ''+CurFrame
@@ -376,7 +384,7 @@ frameChanged = (v) ->
     conn.send new Blob(['getFrame:'+frameN.value])
   sendFrameCommandsTimeout = setTimeout sendFrameCommands, 100
 
-$(frameN).on 'change', frameChanged
+$(frameN).on 'change', () -> frameChanged()
 
 frameCountInput = document.getElementById 'frameCount'
 frameCountChanged = (v) ->
@@ -406,4 +414,18 @@ luaSourceChanged = () ->
 $('#luaSource').on 'keyup', luaSourceChanged
 $('#luaSource').on 'change', luaSourceChanged
 
+AStarInitialized = null
+$('#cancelAStar').on 'click', () ->
+  AStarInitialized = null
+  console.log 'cancel a*'
+$('#startAStar').on 'click', () ->
+  if not AStarInitialized
+    AStarInitialized = CurFrame
+    console.log 'start a*'
+    conn.send new Blob(['initAStar:'+CurFrame])
+  else
+    console.log 'step a*'
+    conn.send new Blob(['workAStar:'])
+
 frameChanged()
+

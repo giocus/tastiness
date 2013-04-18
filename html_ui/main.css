@@ -121,7 +121,7 @@ input[type=text], textarea, #ramHash {
 
 #luaControls {
   position:absolute;
-  top:560px;
+  top:590px;
   left:560px;
 }
 #luaControls > div {
